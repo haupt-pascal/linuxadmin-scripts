@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # webcheck.sh - Website availability checker for IPs and CIDR ranges
-# Part of linuxadmin-scripts (https://github.com/yourusername/linuxadmin-scripts)
+# Part of linuxadmin-scripts (https://github.com/haupt-pascal/linuxadmin-scripts)
 #
 # Description: Checks for active websites on specified IPs or CIDR ranges with optional port specification.
 # Creates a list of active websites in active.txt
@@ -19,7 +19,7 @@ check_ip() {
     
     # 15 second timeout for curl (--max-time includes connection and operation timeout)
     echo -n "Checking ${ip}:${port}... "
-    if curl -s --connect-timeout 10 --max-time 15 "http://${ip}:${port}" -o /dev/null; then
+    if curl -s --connect-timeout 3 --max-time 8 "http://${ip}:${port}" -o /dev/null; then
         echo "http://${ip}:${port}" >> active.txt
         echo -e "\r[+] Active: http://${ip}:${port}  "
     else
