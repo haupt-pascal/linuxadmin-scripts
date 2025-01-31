@@ -1,31 +1,33 @@
 #!/bin/bash
 #
-# shopware-breach-php-monitor.sh - Monitor for suspicious PHP files
-# Part of linuxadmin-scripts (https://github.com/haupt-pascal/linuxadmin-scripts)
+# shopware-breach-php-monitor.sh - hunting for sus PHP files fr fr
+# part of linuxadmin-scripts (https://github.com/haupt-pascal/linuxadmin-scripts)
 #
-# Description: Searches for potentially malicious PHP files and sends email notifications
-# when suspicious files are found.
+# tl;dr: looks for sussy PHP files and slides into your DMs when it finds something sketch
 #
-# Usage: ./shopware-breach-php-monitor.sh [scan-path]
+# how to use: ./shopware-breach-php-monitor.sh [scan-path]
 
-# Configuration
+# the tea ☕
 SCAN_PATH="${1:-/var/www}"
-# EMAIL NEEDS TO BE CHANGES
+# slide into these DMs when we find something sus
 EMAIL_TO="admin@yourdomain.com"
+
+# list of files that are mad sus no cap
 SUSPICIOUS_FILES=(
-    "cmd.php"
-    "client.php"
-    "shell.php"
-    "backdoor.php"
-    "c99.php"
-    "r57.php"
-    "webshell.php"
+    "cmd.php"        # kinda sus
+    "client.php"     # major red flag
+    "shell.php"      # bestie why
+    "backdoor.php"   # bruh moment
+    "c99.php"        # that's gonna be a yikes from me
+    "r57.php"        # straight up not having a good time
+    "webshell.php"   # this ain't it chief
 )
 
+# where we spill the tea
 LOG_FILE="/var/log/php-malware-monitor.log"
 TEMP_FILE="/tmp/php-malware-findings.txt"
 
-# Function to send email using sendmail
+# slide into someone's DMs (email them)
 send_email() {
     local subject="$1"
     local body="$2"
@@ -33,7 +35,7 @@ send_email() {
     
     if command -v sendmail >/dev/null 2>&1; then
         {
-            echo "From: Shopware Security Monitor <${from_email}>"
+            echo "From: Shopware Security Monitor (aka the vibe checker) <${from_email}>"
             echo "To: ${EMAIL_TO}"
             echo "Subject: ${subject}"
             echo "Content-Type: text/plain; charset=UTF-8"
@@ -42,32 +44,32 @@ send_email() {
         } | sendmail -t -i
         
         if [ $? -eq 0 ]; then
-            log_message "Email sent successfully to ${EMAIL_TO}"
+            log_message "slid into ${EMAIL_TO}'s DMs successfully"
         else
-            log_message "Error sending email via sendmail"
-            echo "Error: Failed to send email via sendmail"
+            log_message "couldn't slide into the DMs, sendmail took an L"
+            echo "bruh moment: email failed to send via sendmail"
         fi
     else
-        error_msg="Error: 'sendmail' not found. Please install postfix or other MTA."
+        error_msg="bestie, we need 'sendmail' installed... drop that postfix or another MTA real quick"
         log_message "$error_msg"
         echo "$error_msg"
-        echo "Email would have been sent with:"
+        echo "would've sent this tea:"
         echo "Subject: $subject"
         echo -e "Body:\n$body"
     fi
 }
 
-# Function to log messages
+# spill the tea into our log
 log_message() {
     local message="$1"
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$LOG_FILE"
 }
 
-# Main scanning function
+# main character energy - scanning for sus files
 scan_for_suspicious_files() {
     local pattern=""
     
-    # Build pattern for find command
+    # build that pattern like we're making a TikTok dance
     for file in "${SUSPICIOUS_FILES[@]}"; do
         if [ -z "$pattern" ]; then
             pattern="-name $file"
@@ -76,39 +78,38 @@ scan_for_suspicious_files() {
         fi
     done
     
-    # Clear temporary file
+    # clean up old tea
     > "$TEMP_FILE"
     
-    # Execute find command and store results
+    # time to find some sussy files
     eval "find \"$SCAN_PATH\" -type f \( $pattern \) -exec ls -l {} \;" > "$TEMP_FILE"
     
-    # Check if any suspicious files were found
+    # check if we caught anyone acting sus
     if [ -s "$TEMP_FILE" ]; then
-        local subject="[ALERT] Suspicious PHP files detected on $(hostname)"
-        local body="The following suspicious PHP files were detected:\n\n"
+        local subject="[NO CAP] caught some sus PHP files on $(hostname)"
+        local body="bestie, we found some super sus PHP files:\n\n"
         body+="$(cat "$TEMP_FILE")\n\n"
-        body+="Scan path: $SCAN_PATH\n"
-        body+="Timestamp: $(date '+%Y-%m-%d %H:%M:%S')\n"
-        body+="Hostname: $(hostname)\n"
-        body+="\nPlease investigate these files immediately."
+        body+="where we looked: $SCAN_PATH\n"
+        body+="when we caught them: $(date '+%Y-%m-%d %H:%M:%S')\n"
+        body+="on this server: $(hostname)\n"
+        body+="\nplease check these files rn fr fr, this ain't a drill 😳"
         
         send_email "$subject" "$body"
-        log_message "Suspicious files found and email sent"
-        echo "Suspicious files found! Check $LOG_FILE for details."
+        log_message "caught some sussy files and spilled the tea"
+        echo "found some sus files! peep $LOG_FILE for the tea"
     else
-        log_message "No suspicious files found"
-        echo "No suspicious files found."
+        log_message "everything passed the vibe check"
+        echo "we chillin, no sus files found"
     fi
 }
 
-# Create log directory if it doesn't exist
+# make sure we got a place to spill the tea
 mkdir -p "$(dirname "$LOG_FILE")"
 
-# Main execution
-log_message "Starting scan in $SCAN_PATH"
+# let's get this bread
+log_message "starting the vibe check in $SCAN_PATH"
 scan_for_suspicious_files
-log_message "Scan completed"
+log_message "vibe check complete"
 
-# Cleanup
+# clean up after ourselves like mom taught us
 rm -f "$TEMP_FILE"
-

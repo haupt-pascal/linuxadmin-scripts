@@ -1,8 +1,9 @@
 #!/bin/bash
 #
-# abuse-ip-check.sh - Hochperformante IP-Prüfung mit Basis-Tools
+# abuse-ip-check.sh - fr fr no cap this script checks IPs efficiently
+# like seriously, it's based (using only core utils)
 #
-# Konfiguration
+# config stuff (don't touch unless you know what you're doing bestie)
 REPO_URL="https://github.com/borestad/blocklist-abuseipdb.git"
 CLONE_DIR="/tmp/blocklist-abuseipdb-$$"
 DEFAULT_LIST="abuseipdb-s100-all.ipv4"
@@ -11,157 +12,142 @@ MAX_TIMEOUT=2
 MAX_WORKERS=100
 TEMP_DIR="/tmp/ipcheck-$$"
 MAIN_PID=$$
+ACTIVE_IPS_FILE="$PWD/active.txt"
 
-# Debug-Funktion
+# debug output (respectfully)
 debug() {
     [ "$VERBOSE" = true ] && echo "[DEBUG] $*"
 }
 
-# Prozess-Cleanup
+# cleanup on aisle 5
 cleanup() {
     echo
-    echo "Cleanup... Beende alle Prozesse..."
+    echo "brb, cleaning up this mess..."
     pkill -P $MAIN_PID
     sleep 1
     pkill -9 -P $MAIN_PID 2>/dev/null
     rm -rf "$CLONE_DIR" "$TEMP_DIR"
-    echo "Cleanup abgeschlossen."
+    echo "ight we clean now"
     exit 0
 }
 
-# Abhängigkeiten prüfen
+# check if we got the tools we need
 check_requirements() {
     local tools=(git curl awk split pkill)
     for tool in "${tools[@]}"; do
-        command -v "$tool" >/dev/null 2>&1 || { echo "Fehler: $tool ist nicht installiert"; exit 1; }
+        command -v "$tool" >/dev/null 2>&1 || { echo "bestie, we need $tool installed"; exit 1; }
     done
 }
 
-# Repository klonen
+# yoink that repo real quick
 clone_repo() {
-    echo "Klone Repository..."
-    git clone --depth 1 --single-branch --no-tags "$REPO_URL" "$CLONE_DIR" || { echo "Fehler beim Klonen"; exit 1; }
+    echo "yoinking that repo..."
+    git clone --depth 1 --single-branch --no-tags "$REPO_URL" "$CLONE_DIR" || { echo "nah fam, clone failed"; exit 1; }
 }
 
-# IP-Extraktion
+# extract them IPs like it's a TikTok trend
 extract_ips() {
     local input_file="$1"
-    local temp_file="$2"
+    local output_pipe="$2"
     
-    echo "Extrahiere IPs aus $input_file..."
+    echo "extracting IPs from $input_file no cap"
     
     if [ ! -f "$input_file" ]; then
-        echo "Fehler: Datei $input_file nicht gefunden!"
+        echo "file not found bestie, that's kinda sus"
         exit 1
     fi
     
-    if [ "$VERBOSE" = true ]; then
-        echo "Erste 5 Zeilen der Datei:"
-        head -n 5 "$input_file"
-    fi
-    
-    # Extrahiere nur die IP-Adressen
+    # stream those IPs like it's Spotify
     awk '
     /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {
-        print $1  # Nur die IP-Adresse (erstes Feld)
+        print $1
+        fflush()
         count++
     }
-    END { print "# " count " IPs processed" > "/dev/stderr" }
-    ' "$input_file" > "$temp_file"
-    
-    local ip_count=$(wc -l < "$temp_file")
-    echo "$ip_count IPs gefunden"
-    
-    if [ "$ip_count" -eq 0 ]; then
-        echo "Fehler: Keine gültigen IPs in der Datei gefunden!"
-        exit 1
-    fi
+    END { print "# sheesh... " count " IPs processed" > "/dev/stderr" }
+    ' "$input_file" > "$output_pipe" &
 }
 
-# IP-Prüfung für einen Chunk
+# check if these IPs are bussin or sus
 check_chunk() {
     local chunk_file="$1"
     local port="$2"
     local pid_file="$3"
-    local result_file="$4"
+    local results_lock="$4"
     
     echo $$ > "$pid_file"
     
     while IFS= read -r ip; do
-        debug "Prüfe IP: $ip:$port"
+        debug "checking http://${ip}:${port}"
         if curl -s -o /dev/null -w "%{http_code}" \
             --connect-timeout $CONNECT_TIMEOUT \
             --max-time $MAX_TIMEOUT \
             "http://${ip}:${port}" 2>/dev/null | grep -q "^[23]"; then
-            echo "$ip" >> "$result_file"
-            echo "[+] $ip:$port aktiv"
+            # no race conditions in this house
+            (
+                flock -x 200
+                echo "http://${ip}:${port}" >> "$ACTIVE_IPS_FILE"
+                echo "[+] http://${ip}:${port} is alive and vibing"
+            ) 200>"$results_lock"
         fi
     done < "$chunk_file"
     
     rm -f "$pid_file"
 }
 
-# Hauptfunktion für Multiprocessing
+# multiprocessing go brrrrr
 process_ips_multiprocess() {
-    local temp_file="$1"
+    local input_pipe="$1"
     local workers="$2"
     local port="$3"
     
-    mkdir -p "$TEMP_DIR"/{chunks,pids,results}
-    > active.txt
+    mkdir -p "$TEMP_DIR"/{chunks,pids}
+    > "$ACTIVE_IPS_FILE"
     
-    local total_ips=$(wc -l < "$temp_file")
+    # lock file to keep things bussin
+    local results_lock="$TEMP_DIR/results.lock"
+    touch "$results_lock"
+    
+    # save all IPs temporarily (like a story that doesn't expire)
+    local all_ips_file="$TEMP_DIR/all_ips.txt"
+    cat "$input_pipe" > "$all_ips_file"
+    
+    # math time (ugh)
+    local total_ips=$(wc -l < "$all_ips_file")
     local chunk_size=$(( (total_ips + workers - 1) / workers ))
     
-    debug "Gesamt IPs: $total_ips"
-    debug "Chunk-Größe: $chunk_size"
-    debug "Worker: $workers"
+    debug "total IPs: $total_ips"
+    debug "worker count: $workers"
+    debug "IPs per worker: $chunk_size"
     
+    # split work like sharing a pizza
     cd "$TEMP_DIR/chunks" || exit 1
-    split -l "$chunk_size" "$temp_file" "chunk_"
+    split -l "$chunk_size" "$all_ips_file" "chunk_"
     
-    echo "Starte Überprüfung mit $workers Workern..."
+    echo "spawning $workers workers (they're not getting paid)"
     
+    # let the workers do their thing
     for chunk in chunk_*; do
-        [ -f "$chunk" ] || continue
         local pid_file="$TEMP_DIR/pids/$chunk.pid"
-        local result_file="$TEMP_DIR/results/$chunk.txt"
-        
-        while [ "$(find "$TEMP_DIR/pids" -type f | wc -l)" -ge "$workers" ]; do
-            for p in "$TEMP_DIR"/pids/*.pid; do
-                [ -f "$p" ] || continue
-                if ! kill -0 "$(cat "$p")" 2>/dev/null; then
-                    rm "$p"
-                fi
-            done
-            sleep 0.1
-        done
-        
-        check_chunk "$TEMP_DIR/chunks/$chunk" "$port" "$pid_file" "$result_file" &
-        debug "Worker für $chunk gestartet (PID: $!)"
+        check_chunk "$TEMP_DIR/chunks/$chunk" "$port" "$pid_file" "$results_lock" &
+        debug "worker $chunk is doing their thing (PID: $!)"
     done
     
+    # wait for everyone to finish their tasks (like waiting for people to respond in a group chat)
     wait
     
-    # Alle Ergebnisse zusammenführen
-    if [ -d "$TEMP_DIR/results" ]; then
-        cat "$TEMP_DIR"/results/*.txt 2>/dev/null | sort -u > active.txt
-        local found_count=$(wc -l < active.txt)
-        echo "Gefundene aktive IPs: $found_count"
-    else
-        echo "Keine aktiven IPs gefunden."
-        touch active.txt
-    fi
+    local found_count=$(wc -l < "$ACTIVE_IPS_FILE")
+    echo "found $found_count active IPs (that's pretty bussin)"
 }
 
-# Hauptprogramm
+# the main character
 main() {
     local blocklist_file="$DEFAULT_LIST"
     local port="80"
     local workers="$MAX_WORKERS"
     VERBOSE=false
     
-    # Parse Kommandozeilenargumente
+    # parse them args like it's a tweet
     while [[ $# -gt 0 ]]; do
         case $1 in
             -f|--file) blocklist_file="$2"; shift 2 ;;
@@ -169,29 +155,37 @@ main() {
             -w|--workers) workers="$2"; shift 2 ;;
             -v|--verbose) VERBOSE=true; shift ;;
             -h|--help)
-                echo "Verwendung: $0 [-f DATEI] [-p PORT] [-w WORKER] [-v]"
+                echo "usage: $0 [-f FILE] [-p PORT] [-w WORKERS] [-v]"
+                echo "bestie just run it with -w 50 -p 80 trust"
                 exit 0
                 ;;
-            *) echo "Unbekannte Option: $1"; exit 1 ;;
+            *) echo "idk what $1 is supposed to mean"; exit 1 ;;
         esac
     done
     
     trap cleanup EXIT INT TERM
     check_requirements
     
-    local temp_ip_file=$(mktemp)
     clone_repo
     
     local full_blocklist_path="$CLONE_DIR/$blocklist_file"
     if [ ! -f "$full_blocklist_path" ]; then
-        echo "Fehler: Blockliste '$blocklist_file' nicht gefunden!"
-        echo "Verfügbare Listen:"
+        echo "can't find that blocklist bestie"
+        echo "here's what we got tho:"
         find "$CLONE_DIR" -name "abuseipdb-*.ipv4" -exec basename {} \;
         exit 1
     fi
     
-    extract_ips "$full_blocklist_path" "$temp_ip_file"
-    process_ips_multiprocess "$temp_ip_file" "$workers" "$port"
+    # make our temp directory and pipe (like a collab)
+    mkdir -p "$TEMP_DIR"
+    local ip_pipe="$TEMP_DIR/ip_pipe"
+    mkfifo "$ip_pipe"
+    
+    # let's get this bread
+    extract_ips "$full_blocklist_path" "$ip_pipe"
+    process_ips_multiprocess "$ip_pipe" "$workers" "$port"
+    
+    rm -f "$ip_pipe"
 }
 
 main "$@"
